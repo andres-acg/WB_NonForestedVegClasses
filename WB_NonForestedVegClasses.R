@@ -72,6 +72,7 @@ Init <- function(sim){
     sim$WB_NonForestedVegClassesBaseLCCMap <- postProcess(
       sim$WB_NonForestedVegClassesBaseLCCMap,
       projectTo = sim$rasterToMatch,
+      method = "mode",
       cropTo = sim$rasterToMatch,
       maskTo = sim$rasterToMatch
     )
