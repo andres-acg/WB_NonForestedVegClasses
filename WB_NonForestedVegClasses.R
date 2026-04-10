@@ -23,7 +23,7 @@ defineModule(sim, list(
     expectsInput(objectName = "pixelGroupMap",
                  objectClass = "SpatRast",
                  desc = paste("pixelGroupMap from the ",
-                              "boimass_core module used to determine ",
+                              "biomass_core module used to determine ",
                               "forested areas"),
                  sourceURL = NA),
     expectsInput(objectName = "rasterToMatch", 
@@ -124,7 +124,12 @@ reComputeNonForestedAreaMap <- function(sim) {
     needRTM <- TRUE
     message("There is no rasterToMatch supplied; will attempt to use rawBiomassMap")
   }
-  
+
+  ##############################################################################
+  # Determine the base raster to use for cropping, masking and projecting the LCC 
+  # map. This will be either pixelGroupMap or rasterToMatch, depending on which 
+  # one is supplied. If both are supplied, pixelGroupMap will be used.
+  ##############################################################################
   if (!is.null(sim$pixelGroupMap)){
     baseRast <- sim$pixelGroupMap
   }
@@ -141,7 +146,7 @@ reComputeNonForestedAreaMap <- function(sim) {
   if(!suppliedElsewhere("rstLCC", sim) && 
      !suppliedElsewhere("WB_NonForestedVegClassesBaseLCCMap", sim)){
     message("##############################################################################")   
-    message("Neither rstLCC nor WB_NonForestedVegClassesBaseLCCMap were supplied.")   
+    message("Neither sim$rstLCC, nor WB_NonForestedVegClassesBaseLCCMap were supplied.")   
     message("Please provide one or the other. By default we are using NTEMS land cover")   
     message("from https://opendata.nfis.org/mapserver/nfis-change_eng.html...")
 
