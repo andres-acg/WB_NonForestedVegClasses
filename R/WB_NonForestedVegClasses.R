@@ -15,31 +15,39 @@ computeNonForestedAreaMap <- function(baseLCCMap, pgm){
   return (nonForestedVegClassesMap)
 }
 
-getWB_NonForestedVegClassesBaseLCCMap <- function(year, cachePath, baseRast){
-  lccURL <- paste0("https://opendata.nfis.org/downloads/forest_change/CA_forest_VLCE2_", year, ".zip")
-  lccTF <- paste0("CA_forest_VLCE2_", year, ".tif")
-  LCCMap <- Cache(
-    prepInputs,
-    url = lccURL,
-    targetFile = lccTF,
-    destinationPath = cachePath,
-    fun = terra::rast,
-    cropTo = baseRast,
-    projectTo = baseRast,
-    method = "near",
-    overwrite = TRUE,
-    writeTo = .suffix("rstLCC.tif", paste0("_NTEMS_", year)),
-    userTags = c("WB_NonForestedVegClassesBaseLCCMap", "NTEMS", year)
+## SCANFI / FAO land cover code legend. Kept in sync BY HAND with
+## SCANFI_LCC_DICT in modules/WB_LichenBiomass/R/meanBiomassTable.R -- the two
+## can't literally share code because SpaDES modules each source only their
+## own R/ folder. 240 (FAO-disturbed) is deliberately absent: every map this
+## legend gets attached to has already had 240 reclassed to 50 (shrub).
+addSCANFI_LCC_Legend <- function(lcc) {
+  lcc <- terra::as.factor(lcc)
+  terra::levels(lcc) <- data.frame(
+    value = c(0L, 20L, 31L, 32L, 33L, 40L, 50L, 80L, 81L, 100L, 210L, 220L, 230L),
+    class = c("0-unclassified", "20-water", "31-snow_ice", "32-rock_rubble",
+              "33-exposed_barren_land", "40-bryoids", "50-shrubs", "80-wetland",
+              "81-wetland_treed", "100-herbs", "210-coniferous", "220-broadleaf",
+              "230-mixedwood")
   )
-  # Convert to factor and add more descriptive labels
-  LCCMap <- terra::as.factor(LCCMap)
-  levels(LCCMap) <- data.frame(
-    value = c( 20L,        31L,           32L,              33L,         40L,         50L,        80L,          81L,                100L,        210L,             220L,            230L),
-    class = c("20-water", "31-snow_ice", "32-rock_rubble", "33-barren", "40-bryoid", "50-shrub", "80-wetland", "81-treed_wetland", "100-herbs", "210-coniferous", "220-broadleaf", "230-mixed_wood")
-  )
+  names(lcc) <- "nonForestedVegClasses"
+  varnames(lcc) <- "nonForestedVegClasses"
+  lcc
+}
 
-  # Assign names (for nicer plotting) 
-  names(LCCMap) <- "nonForestedVegClasses"
-  varnames(LCCMap) <- "nonForestedVegClasses"
-  return(LCCMap)
+## Fallback ONLY: used when sim$rstLCC is not available at all (e.g. this
+## module run standalone, without Biomass_borealDataPrep upstream). The normal
+## path in .inputObjects() reuses sim$rstLCC directly and never calls this.
+getWB_NonForestedVegClassesBaseLCCMap_SCANFI <- function(year, inputPath, baseRast){
+  lcc <- LandR::prepInputs_SCANFI_LCC_FAO(
+    year            = year,
+    dataVersion     = "V2",
+    disturbedCode   = 240,
+    destinationPath = inputPath,
+    cropTo          = baseRast,
+    maskTo          = baseRast,
+    projectTo       = baseRast,
+    resampleMethod  = "near"
+  )
+  lcc[lcc == 240] <- 50   # FAO-disturbed -> shrub, same rule used everywhere else
+  addSCANFI_LCC_Legend(lcc)
 }

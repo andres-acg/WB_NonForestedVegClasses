@@ -6,37 +6,55 @@ defineModule(sim, list(
     person("Pierre", "Racine", email= "pierre.racine@sbf.ulaval.ca", role = "aut")
   ),
   childModules = character(0),
-  version = list(WB_LichenBiomass = "0.0.0.1"),
+  version = list(WB_NonForestedVegClasses = "0.0.0.2"),
   timeframe = as.POSIXlt(c(NA, NA)),
   timeunit = "year",
   # citation = list("citation.bib"),
   # documentation = list("NEWS.md", "README.md", "WB_LichenBiomass.Rmd"),
-  reqdPkgs = list("reproducible"),
+  reqdPkgs = list("reproducible", "terra", "LandR"),
   loadOrder = list(after = c("Biomass_core")),
   parameters = rbind(
     defineParameter("WB_NonForestedVegClassesTimeStep", "numeric", 1, NA, NA,
                     "Simulation time at which the non-forested map is regenerated."),
-    defineParameter("baseLCCYear", "numeric", 2010, NA, NA,
-                    "Year of the default LCC to load.")
+    defineParameter("baseLCCYear", "numeric", 2020, NA, NA,
+                    paste("Year of the SCANFI land cover map fetched as a LAST-RESORT",
+                          "fallback for WB_NonForestedVegClassesBaseLCCMap -- only used",
+                          "when neither WB_NonForestedVegClassesBaseLCCMap NOR sim$rstLCC",
+                          "is available (e.g. running this module standalone). In the",
+                          "normal case, sim$rstLCC (SCANFI for the simulation year,",
+                          "produced upstream by Biomass_borealDataPrep) is reused directly",
+                          "and this parameter is ignored. Must be one of the SCANFI V2",
+                          "years: 1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025."))
   ),
   inputObjects = rbind(
     expectsInput(objectName = "pixelGroupMap",
-                 objectClass = "SpatRast",
+                 objectClass = "SpatRaster",
                  desc = paste("pixelGroupMap from the ",
                               "biomass_core module used to determine ",
                               "forested areas"),
                  sourceURL = NA),
-    expectsInput(objectName = "rasterToMatch", 
+    expectsInput(objectName = "rasterToMatch",
                  objectClass = "SpatRaster",
                  desc = "A raster version of the `studyArea`"),
-    expectsInput(objectName = "WB_NonForestedVegClassesBaseLCCMap", 
-                 objectClass = "SpatRast", 
-                 desc = "", 
+    expectsInput(objectName = "rstLCC",
+                 objectClass = "SpatRaster",
+                 desc = paste("This run's own SCANFI land cover map, normally produced",
+                              "upstream by Biomass_borealDataPrep for the simulation year.",
+                              "When present, it is reused directly as",
+                              "WB_NonForestedVegClassesBaseLCCMap -- avoids a second land",
+                              "cover download for the same year/product. Optional: declaring",
+                              "it here only tells SpaDES to run Biomass_borealDataPrep's",
+                              ".inputObjects() first; a SCANFI fallback fetch (keyed on",
+                              "baseLCCYear) runs if it is genuinely absent."),
+                 sourceURL = NA),
+    expectsInput(objectName = "WB_NonForestedVegClassesBaseLCCMap",
+                 objectClass = "SpatRaster",
+                 desc = "",
                  sourceURL = "")
   ),
   outputObjects = rbind(
     createsOutput(objectName = "WB_NonForestedVegClassesMap", 
-                  objectClass = "SpatRast", 
+                  objectClass = "SpatRaster", 
                   desc = "Raster of classified non-forested areas.")
   )
 ))
@@ -59,16 +77,20 @@ doEvent.WB_NonForestedVegClasses = function(sim, eventTime, eventType) {
   return(invisible(sim))
 }
 
+
 Init <- function(sim){
+
   # If WB_NonForestedVegClassesBaseLCCMap is not provided in the objects, make it a copy of sim$rstLCC
-  if (!suppliedElsewhere("WB_NonForestedVegClassesBaseLCCMap", sim) && !is.null(sim$rstLCC)){
-    sim$WB_NonForestedVegClassesBaseLCCMap <- sim$rstLCC
-    # Reclass any disturbed values assigned by prepInputs_NTEMS_LCC_FAO() (240) to shrub (50)
-    sim$WB_NonForestedVegClassesBaseLCCMap[sim$WB_NonForestedVegClassesBaseLCCMap == 240] <- 50
-  }
+  # if (!suppliedElsewhere("WB_NonForestedVegClassesBaseLCCMap", sim) && !is.null(sim$rstLCC)){
+  #   sim$WB_NonForestedVegClassesBaseLCCMap <- sim$rstLCC
+  #
+  #   # Reclass any disturbed values assigned by prepInputs_NTEMS_LCC_FAO() (240) to shrub (50)
+  #   sim$WB_NonForestedVegClassesBaseLCCMap[sim$WB_NonForestedVegClassesBaseLCCMap == 240] <- 50
+  # }
   # Project, crop and mask the base LCC map to rasterToMatch
   # This is done only once wherever the LCC was instanciated from (default, rstLCC or simInit)
-  if (!.compareRas(sim$WB_NonForestedVegClassesBaseLCCMap, sim$rasterToMatch, stopOnError = FALSE))
+  if (!.compareRas(sim$WB_NonForestedVegClassesBaseLCCMap, sim$rasterToMatch, stopOnError = FALSE)) {
+
     sim$WB_NonForestedVegClassesBaseLCCMap <- postProcess(
       sim$WB_NonForestedVegClassesBaseLCCMap,
       projectTo = sim$rasterToMatch,
@@ -76,6 +98,8 @@ Init <- function(sim){
       cropTo = sim$rasterToMatch,
       maskTo = sim$rasterToMatch
     )
+  }
+
   return(invisible(sim))
 }
 
@@ -141,31 +165,42 @@ reComputeNonForestedAreaMap <- function(sim) {
                "in sim before WB_NonForestedVegClasses can be initialized..."))
   }
   ##############################################################################
-  # Download a LLC raster if necessary
+  # Base land cover map -- SCANFI everywhere now, no NTEMS VLCE2.
+  #
+  # Preferred path: reuse sim$rstLCC. It is normally produced upstream by
+  # Biomass_borealDataPrep (SCANFI for THIS simulation year, FAO-disturbed
+  # pixels already coded 240) -- reusing it costs nothing extra, no second
+  # land cover download for the same year/product.
+  #
+  # Fallback path (only when rstLCC genuinely is not available, e.g. this
+  # module is run standalone without Biomass_borealDataPrep): fetch SCANFI
+  # directly for `baseLCCYear`.
   ##############################################################################
-  if(!suppliedElsewhere("rstLCC", sim) && 
-     !suppliedElsewhere("WB_NonForestedVegClassesBaseLCCMap", sim)){
-    message("##############################################################################")   
-    message("Neither sim$rstLCC, nor WB_NonForestedVegClassesBaseLCCMap were supplied.")   
-    message("Please provide one or the other. By default we are using NTEMS land cover")   
-    message("from https://opendata.nfis.org/mapserver/nfis-change_eng.html...")
+  if (!suppliedElsewhere("WB_NonForestedVegClassesBaseLCCMap", sim)) {
+    if (!is.null(sim$rstLCC)) {
+      message("##############################################################################")
+      message("Using sim$rstLCC as WB_NonForestedVegClassesBaseLCCMap (SCANFI, already ",
+              "prepared upstream for this run) -- no extra land cover download.")
 
-    # sim$WB_NonForestedVegClassesBaseLCCMap <- Cache(prepInputs_NTEMS_LCC_FAO,
-    #   year = P(sim)$baseLCCYear,
-    #   maskTo = baseRast,
-    #   cropTo = baseRast,
-    #   projectTo = baseRast,
-    #   disturbedCode = 50, # set FAO disturbed areas to shrub
-    #   destinationPath = asPath(inputPath(sim), 1),
-    #   overwrite = TRUE,
-    #   # writeTo = .suffix("rstLCC.tif", paste0("_", P(sim)$.studyAreaName, "_", P(sim)$dataYear)),
-    #   userTags = c("WB_NonForestedVegClassesBaseLCCMap", currentModule(sim),
-    #                "FAO_NTEMS", P(sim)$baseLCCYear))
-    sim$WB_NonForestedVegClassesBaseLCCMap <- getWB_NonForestedVegClassesBaseLCCMap(
-      P(sim)$baseLCCYear,
-      getPaths()$cachePath,
-      baseRast
-    )
+      lcc <- terra::deepcopy(sim$rstLCC)
+      try(terra::levels(lcc) <- NULL, silent = TRUE)
+      try(terra::coltab(lcc) <- NULL, silent = TRUE)
+      lcc[lcc == 240] <- 50   # FAO-disturbed -> shrub, same rule used everywhere else
+      sim$WB_NonForestedVegClassesBaseLCCMap <- addSCANFI_LCC_Legend(lcc)
+
+    } else {
+      message("##############################################################################")
+      message("Neither sim$rstLCC, nor WB_NonForestedVegClassesBaseLCCMap were supplied.")
+      message("Fetching SCANFI land cover for year ", P(sim)$baseLCCYear,
+              " directly (fallback path; this normally only happens when running ",
+              "WB_NonForestedVegClasses standalone, without Biomass_borealDataPrep)...")
+
+      sim$WB_NonForestedVegClassesBaseLCCMap <- getWB_NonForestedVegClassesBaseLCCMap_SCANFI(
+        P(sim)$baseLCCYear,
+        getPaths()$inputPath,
+        baseRast
+      )
+    }
   }
 
   return(invisible(sim))
