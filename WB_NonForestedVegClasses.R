@@ -183,8 +183,13 @@ reComputeNonForestedAreaMap <- function(sim) {
               "prepared upstream for this run) -- no extra land cover download.")
 
       lcc <- terra::deepcopy(sim$rstLCC)
-      try(terra::levels(lcc) <- NULL, silent = TRUE)
-      try(terra::coltab(lcc) <- NULL, silent = TRUE)
+      # Bare generics here (not terra::levels<- / terra::coltab<-): terra
+      # implements these replacement methods via S4 setMethod() on the base
+      # generic, not as standalone exported "levels<-"/"coltab<-" objects, so
+      # the terra:: qualified form errors with "not an exported object from
+      # 'namespace:terra'". Bare form dispatches fine since terra is loaded.
+      try(levels(lcc) <- NULL, silent = TRUE)
+      try(coltab(lcc) <- NULL, silent = TRUE)
       lcc[lcc == 240] <- 50   # FAO-disturbed -> shrub, same rule used everywhere else
       sim$WB_NonForestedVegClassesBaseLCCMap <- addSCANFI_LCC_Legend(lcc)
 

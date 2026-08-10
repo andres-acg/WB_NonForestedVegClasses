@@ -22,7 +22,13 @@ computeNonForestedAreaMap <- function(baseLCCMap, pgm){
 ## legend gets attached to has already had 240 reclassed to 50 (shrub).
 addSCANFI_LCC_Legend <- function(lcc) {
   lcc <- terra::as.factor(lcc)
-  terra::levels(lcc) <- data.frame(
+  # NOTE: must use the bare `levels<-` generic here, NOT `terra::levels<-`.
+  # terra implements this replacement method via S4 setMethod() on the base
+  # generic rather than exporting a standalone "levels<-" object, so
+  # `terra::levels(lcc) <- value` fails with "'levels<-' is not an exported
+  # object from 'namespace:terra'". The bare form dispatches correctly via
+  # S4 method resolution as long as terra is loaded (it always is here).
+  levels(lcc) <- data.frame(
     value = c(0L, 20L, 31L, 32L, 33L, 40L, 50L, 80L, 81L, 100L, 210L, 220L, 230L),
     class = c("0-unclassified", "20-water", "31-snow_ice", "32-rock_rubble",
               "33-exposed_barren_land", "40-bryoids", "50-shrubs", "80-wetland",
