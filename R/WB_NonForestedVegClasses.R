@@ -15,11 +15,23 @@ computeNonForestedAreaMap <- function(baseLCCMap, pgm){
   return (nonForestedVegClassesMap)
 }
 
-## SCANFI / FAO land cover code legend. Kept in sync BY HAND with
-## SCANFI_LCC_DICT in modules/WB_LichenBiomass/R/meanBiomassTable.R -- the two
-## can't literally share code because SpaDES modules each source only their
-## own R/ folder. 240 (FAO-disturbed) is deliberately absent: every map this
-## legend gets attached to has already had 240 reclassed to 50 (shrub).
+## SCANFI land cover code legend. Kept in sync BY HAND with SCANFI_LCC_DICT in
+## modules/WB_LichenBiomass/R/meanBiomassTable.R -- the two can't literally
+## share code because SpaDES modules each source only their own R/ folder.
+##
+## These are SCANFI's OWN eight nfiLandCover classes, expressed in Canada LCC
+## codes by the data producer (the downloaded file is named
+## SCANFI_att_nfiLandcover_CanadaLCCclassCodes_<year>_v2_*.tif). The former
+## NTEMS VLCE2 legend used here listed 31/32/33 (snow-ice, rock-rubble,
+## exposed-barren) and 80/81 (wetland, wetland-treed) -- none of which SCANFI
+## emits -- while omitting 30, SCANFI's single Rock/barren class, which is
+## present in the data. Any class missing from this table is dropped to NA when
+## the categories are attached, so the omission of 30 was not cosmetic.
+##
+## SCANFI has NO wetland class: wetland pixels fall into shrub/herb/coniferous.
+## 0 is retained only as a nodata/unclassified safety net.
+## 240 (FAO-disturbed) is deliberately absent: every map this legend gets
+## attached to has already had 240 reclassed to 50 (shrub).
 addSCANFI_LCC_Legend <- function(lcc) {
   lcc <- terra::as.factor(lcc)
   # NOTE: must use the bare `levels<-` generic here, NOT `terra::levels<-`.
@@ -29,10 +41,9 @@ addSCANFI_LCC_Legend <- function(lcc) {
   # object from 'namespace:terra'". The bare form dispatches correctly via
   # S4 method resolution as long as terra is loaded (it always is here).
   levels(lcc) <- data.frame(
-    value = c(0L, 20L, 31L, 32L, 33L, 40L, 50L, 80L, 81L, 100L, 210L, 220L, 230L),
-    class = c("0-unclassified", "20-water", "31-snow_ice", "32-rock_rubble",
-              "33-exposed_barren_land", "40-bryoids", "50-shrubs", "80-wetland",
-              "81-wetland_treed", "100-herbs", "210-coniferous", "220-broadleaf",
+    value = c(0L, 20L, 30L, 40L, 50L, 100L, 210L, 220L, 230L),
+    class = c("0-unclassified", "20-water", "30-rock", "40-bryoids",
+              "50-shrubs", "100-herbs", "210-coniferous", "220-broadleaf",
               "230-mixedwood")
   )
   names(lcc) <- "nonForestedVegClasses"
